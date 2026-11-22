@@ -311,6 +311,22 @@ async function open(browser, { location = null, homeCountry = null, locale = "de
     await context.close();
   }
 
+  // --- A quiet refresh keeps good data when a service fails ---
+  {
+    const { page, text, search, context } = await open(browser,
+      { location: { latitude: 47.37691, longitude: 8.54169 }, homeCountry: "us" });
+    await page.waitForFunction(() => document.getElementById("herePlace").textContent === "Hometown, Homeland");
+    await search("Tokyo");
+    await page.route("**/open.er-api.com/**", (r) => r.fulfill({ status: 500, body: "" }));
+    await page.route("**/api.bigdatacloud.net/**", (r) => r.fulfill({ status: 500, body: "" }));
+    await page.evaluate(() => { for (const entry of ratesCache.values()) entry.at -= 2 * 60 * 60 * 1000; });
+    await page.evaluate(() => refresh());
+    await page.waitForTimeout(1000);
+    check("refresh keeps the rate when rates fail", await text("conv"), "1 JPY = 0.006667 USD");
+    check("refresh keeps your place name", await text("herePlace"), "Hometown, Homeland");
+    await context.close();
+  }
+
   // --- A damaged saved place is ignored ---
   {
     const { page, text, context } = await open(browser);

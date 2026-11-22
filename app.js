@@ -344,10 +344,12 @@ function choose(place, places) {
   return load(async () => ({ place, places }));
 }
 
-async function refreshConversion() {
+// `quiet` (used by the regular refresh) keeps the rate on screen if a new one can't be had.
+async function refreshConversion(quiet = false) {
   const dest = state.dest;
   if (!dest) return;
   const conv = await conversion(dest.currency);
+  if (quiet && conv && !conv.rate) return;
   if (dest === state.dest && (!conv || conv.to === state.here.currency)) showConversion(conv);
 }
 
@@ -508,7 +510,7 @@ async function loadHere(quiet = false) {
 
   if (weather) {
     showWeather("here", weather);
-    $("herePlace").textContent = where.name || "Near you";
+    if (where.name || !quiet) $("herePlace").textContent = where.name || "Near you";
     if (weather.timezone && weather.timezone !== state.here.timezone) {
       state.here.timezone = weather.timezone;
       startClock("here", weather.timezone, { weekday: "short", day: "numeric", month: "short" });
@@ -529,7 +531,7 @@ async function refresh() {
   if (state.here.coords) relocateQuietly();
   const dest = state.dest;
   if (dest) {
-    refreshConversion(); // rates are fetched again once they're over an hour old
+    refreshConversion(true); // rates are fetched again once they're over an hour old
     const weather = await getWeather(dest.place.latitude, dest.place.longitude).catch(() => null);
     if (weather && dest === state.dest) showWeather("dest", weather);
   }
