@@ -204,7 +204,7 @@ function utcOffset(timezone, date = new Date()) {
     timeZone: timezone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric",
     hour: "numeric", minute: "numeric"
   }).formatToParts(date).forEach(({ type, value }) => { p[type] = Number(value); });
-  const local = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
+  const local = Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute); // some browsers write midnight as 24
   return Math.round((local - Math.floor(date.getTime() / 60000) * 60000) / 60000);
 }
 
@@ -310,7 +310,7 @@ async function load(getPlace) {
   const id = ++state.searchId;
   const isCurrent = () => id === state.searchId;
   closeSuggestions();
-  $("go").disabled = true;
+  $("search").classList.add("busy"); // the button stays usable: a newer search simply takes over
   setStatus("Searching…");
   try {
     const { place, places } = await getPlace();
@@ -332,7 +332,7 @@ async function load(getPlace) {
   } catch (err) {
     if (isCurrent()) setStatus(err.message || "Something went wrong. Please try again.", true);
   } finally {
-    if (isCurrent()) $("go").disabled = false;
+    if (isCurrent()) $("search").classList.remove("busy");
   }
 }
 

@@ -93,7 +93,7 @@ h1 {
   outline: none;
 }
 
-.search:focus-within { border-color: var(--blue); }
+.search:focus-within { border-color: var(--blue-text); }
 
 .search button {
   border: 0;
@@ -107,7 +107,7 @@ h1 {
 }
 
 .search button:hover { filter: brightness(1.08); }
-.search button:disabled { opacity: 0.6; cursor: wait; }
+.search.busy button { cursor: progress; }
 
 .search-wrap { position: relative; z-index: 2; }
 

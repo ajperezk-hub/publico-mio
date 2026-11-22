@@ -51,8 +51,11 @@ async function open(browser, { location = null, homeCountry = null, locale = "de
   });
   const page = await context.newPage();
   const calls = { rates: 0, weather: [], place: [], searches: [] };
-  await page.route("**/geocoding-api.open-meteo.com/**", (r) => {
+  await page.route("**/geocoding-api.open-meteo.com/**", async (r) => {
     if (api.offline) return r.abort();
+    if (api.slowSearch && new URL(r.request().url()).searchParams.get("name") === api.slowSearch) {
+      await new Promise((x) => setTimeout(x, 3000));
+    }
     // Like the real service: places whose name starts with what was typed, biggest first.
     const name = new URL(r.request().url()).searchParams.get("name").toLowerCase();
     calls.searches.push(name);
@@ -83,7 +86,7 @@ async function open(browser, { location = null, homeCountry = null, locale = "de
   const search = async (q) => {
     await page.fill("#city", q);
     await page.click("#go");
-    await page.waitForFunction(() => !document.getElementById("go").disabled, null, { timeout: 20000 });
+    await page.waitForFunction(() => !document.getElementById("search").classList.contains("busy"), null, { timeout: 20000 });
   };
   return { page, context, calls, text, search };
 }
@@ -327,6 +330,22 @@ async function open(browser, { location = null, homeCountry = null, locale = "de
     await context.close();
   }
 
+  // --- Enter works while an earlier search is still loading; the newer one wins ---
+  {
+    const { page, text, search, context } = await open(browser, { api: { slowSearch: "Tokyo" } });
+    await page.fill("#city", "Tokyo");
+    await page.press("#city", "Enter");
+    await page.waitForTimeout(300);
+    await page.fill("#city", "Oslo");
+    await page.press("#city", "Enter");
+    await page.waitForFunction(() => document.getElementById("cityName").textContent === "Oslo");
+    await page.waitForTimeout(3500); // let the slow Tokyo answer arrive
+    check("Enter works while loading", await text("cityName"), "Oslo");
+    check("slow older search doesn't take over", await text("country"), "Norway");
+    check("not stuck loading", await page.$eval("#search", (f) => f.classList.contains("busy")), false);
+    await context.close();
+  }
+
   // --- A damaged saved place is ignored ---
   {
     const { page, text, context } = await open(browser);
@@ -349,6 +368,11 @@ async function open(browser, { location = null, homeCountry = null, locale = "de
       [0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99]
         .filter((c) => !weatherVisual(c, 1).svg || !weatherVisual(c, 1).label));
     check("all weather codes have pictures", JSON.stringify(missing), "[]");
+    check("time offsets (India +5:30, Nepal +5:45, Zurich)", await page.evaluate(() => {
+      const d = new Date("2026-11-22T12:00:00Z");
+      return [utcOffset("Asia/Kolkata", d), utcOffset("Asia/Kathmandu", d), utcOffset("Europe/Zurich", d),
+              utcOffset("Europe/Zurich", new Date("2026-11-22T23:30:00Z"))].join(",");
+    }), "330,345,60,60");
     check("accents ignored", await page.evaluate(() => fold("Île-de-FRANCE ") === "ile-de-france"), true);
     check("every currency code is 3 letters", await page.evaluate(() =>
       Object.values(COUNTRY_CURRENCY).every((c) => /^[A-Z]{3}$/.test(c))), true);
