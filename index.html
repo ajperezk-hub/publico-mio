@@ -63,8 +63,8 @@
       <div class="grid">
         <article class="card card-time">
           <h3>Local time</h3>
-          <p id="time" class="big"></p>
-          <p id="date" class="sub"></p>
+          <p id="destTime" class="big"></p>
+          <p id="destDate" class="sub"></p>
           <p id="tz" class="sub muted"></p>
           <p id="tzDiff" class="sub diff"></p>
         </article>
@@ -73,18 +73,18 @@
           <h3>Temperature</h3>
           <div class="temp-row">
             <div>
-              <p class="big"><span id="tempC"></span><span class="unit">°C</span></p>
-              <p class="sub"><span id="tempF"></span> °F</p>
+              <p class="big"><span id="destTempC"></span><span class="unit">°C</span></p>
+              <p class="sub"><span id="destTempF"></span> °F</p>
             </div>
-            <div id="wxIcon" class="wx-icon"></div>
+            <div id="destIcon" class="wx-icon"></div>
           </div>
-          <p id="wxLabel" class="wx-label"></p>
+          <p id="destCond" class="wx-label"></p>
         </article>
 
         <article class="card card-hum">
           <h3>Humidity</h3>
-          <p class="big"><span id="humidity"></span><span class="unit">%</span></p>
-          <div class="meter" aria-hidden="true"><div id="humBar" class="meter-fill"></div></div>
+          <p class="big"><span id="destHum"></span><span class="unit">%</span></p>
+          <div class="meter" aria-hidden="true"><div id="destHumBar" class="meter-fill"></div></div>
         </article>
 
         <article class="card card-money">
@@ -104,7 +104,7 @@
     </footer>
   </main>
 
-  <script src="currencies.js"></script>
+  <script src="data.js"></script>
   <script src="icons.js"></script>
   <script src="app.js"></script>
 </body>

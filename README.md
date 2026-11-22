@@ -32,11 +32,21 @@ Tips:
 | File | What it does |
 | --- | --- |
 | `index.html` | Page layout |
-| `style.css` | Look and feel |
-| `app.js` | Search, weather, clock and currency logic |
-| `icon.svg`, `apple-touch-icon.png` | App icon for the browser tab and home screen |
+| `style.css` | Look and feel (light and dark) |
+| `app.js` | The app: search, weather, clocks, currency, your location |
+| `data.js` | Lookup tables: country → currency (reviewed Nov 2026), country nicknames (UK, USA, UAE…), US state and Canadian province codes |
 | `icons.js` | Weather pictures for each weather type |
-| `currencies.js` | Country → currency table (reviewed Nov 2026) |
+| `icon.svg`, `apple-touch-icon.png` | App icon for the browser tab and home screen |
+| `tests/run.js` | Automated browser tests with made-up data |
+
+## Tests
+
+The tests use made-up answers from the data services, so they need no internet connection:
+
+```
+npm i -D playwright && npx playwright install chromium   # once
+node tests/run.js
+```
 
 ## Data sources
 

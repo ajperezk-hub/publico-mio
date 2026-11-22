@@ -16,10 +16,10 @@ const CLOUD = (y = 0, fill = "#c9ccd1", stroke = "#9aa0a8") =>
     fill="${fill}" stroke="${stroke}" stroke-width="2" stroke-linejoin="round"/>`;
 const DROPS = (n = 3) => {
   const xs = [22, 32, 42].slice(0, n);
-  return `<g stroke="#1d4f9a" stroke-width="3.5" stroke-linecap="round">${xs
+  return `<g stroke="#2f6fd0" stroke-width="3.5" stroke-linecap="round">${xs
     .map((x) => `<line x1="${x}" y1="46" x2="${x - 3}" y2="56"/>`).join("")}</g>`;
 };
-const FLAKES = `<g fill="#1d4f9a">${[22, 32, 42]
+const FLAKES = `<g fill="#2f6fd0">${[22, 32, 42]
   .map((x, i) => `<circle cx="${x}" cy="${i % 2 ? 56 : 52}" r="2.8"/>`).join("")}</g>`;
 const BOLT = `<path d="M34 42l-8 12h7l-3 9 10-14h-7l4-7z" fill="#f2b632" stroke="#c4161c" stroke-width="1.5" stroke-linejoin="round"/>`;
 const FOG = `<g stroke="#9aa0a8" stroke-width="4" stroke-linecap="round">

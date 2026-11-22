@@ -1,3 +1,5 @@
+// Lookup tables used by app.js.
+
 // ISO 3166-1 alpha-2 country code -> ISO 4217 currency code.
 // Last reviewed Nov 2026 (Bulgaria -> EUR from 2026; Curacao/Sint Maarten -> XCG from 2025;
 // Croatia -> EUR from 2023; Sierra Leone -> SLE; Venezuela -> VES).
@@ -45,4 +47,30 @@ const COUNTRY_CURRENCY = {
   XK: "EUR",
   YE: "YER", YT: "EUR",
   ZA: "ZAR", ZM: "ZMW", ZW: "ZWG"
+};
+
+// Common ways people write a country that differ from its official name.
+const COUNTRY_ALIASES = {
+  uk: "gb", "great britain": "gb", britain: "gb", england: "gb", scotland: "gb", wales: "gb",
+  usa: "us", "u.s.": "us", "u.s.a.": "us", america: "us", "united states of america": "us",
+  uae: "ae", emirates: "ae", holland: "nl", "the netherlands": "nl",
+  "south korea": "kr", korea: "kr", "north korea": "kp", russia: "ru", "czech republic": "cz",
+  czechia: "cz", "ivory coast": "ci", turkey: "tr", turkiye: "tr", vietnam: "vn",
+  schweiz: "ch", suisse: "ch", svizzera: "ch", deutschland: "de", espana: "es", italia: "it"
+};
+
+// US state and Canadian province abbreviations ("Paris, TX", "London, ON").
+const REGION_CODES = {
+  us: { al: "alabama", ak: "alaska", az: "arizona", ar: "arkansas", ca: "california", co: "colorado",
+    ct: "connecticut", de: "delaware", dc: "district of columbia", fl: "florida", ga: "georgia", hi: "hawaii",
+    id: "idaho", il: "illinois", in: "indiana", ia: "iowa", ks: "kansas", ky: "kentucky", la: "louisiana",
+    me: "maine", md: "maryland", ma: "massachusetts", mi: "michigan", mn: "minnesota", ms: "mississippi",
+    mo: "missouri", mt: "montana", ne: "nebraska", nv: "nevada", nh: "new hampshire", nj: "new jersey",
+    nm: "new mexico", ny: "new york", nc: "north carolina", nd: "north dakota", oh: "ohio", ok: "oklahoma",
+    or: "oregon", pa: "pennsylvania", ri: "rhode island", sc: "south carolina", sd: "south dakota",
+    tn: "tennessee", tx: "texas", ut: "utah", vt: "vermont", va: "virginia", wa: "washington",
+    wv: "west virginia", wi: "wisconsin", wy: "wyoming" },
+  ca: { ab: "alberta", bc: "british columbia", mb: "manitoba", nb: "new brunswick",
+    nl: "newfoundland and labrador", ns: "nova scotia", nt: "northwest territories", nu: "nunavut",
+    on: "ontario", pe: "prince edward island", qc: "quebec", sk: "saskatchewan", yt: "yukon" }
 };

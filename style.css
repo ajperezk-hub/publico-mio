@@ -14,6 +14,8 @@
   --muted: #7a6559;
   --border: #ecdccb;
   --shadow: 0 10px 30px rgba(143, 15, 20, 0.12);
+  --red-text: var(--red);   /* red and blue used for text: lightened in dark mode */
+  --blue-text: var(--blue);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -25,6 +27,8 @@
     --border: #45322c;
     --chrome: #3a2c28;
     --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    --red-text: #ff7a7f;
+    --blue-text: #8fb3f0;
   }
 }
 
@@ -63,7 +67,7 @@ h1 {
   margin: 0;
   font-size: clamp(2rem, 6vw, 2.8rem);
   letter-spacing: 0.02em;
-  color: var(--red);
+  color: var(--red-text);
 }
 
 .tagline { margin: 4px 0 0; color: var(--muted); }
@@ -106,10 +110,10 @@ h1 {
 .search button:disabled { opacity: 0.6; cursor: wait; }
 
 .status { min-height: 1.4em; margin: 12px 4px; color: var(--muted); }
-.status.error { color: var(--red); font-weight: 600; }
+.status.error { color: var(--red-text); font-weight: 600; }
 
 .place { margin: 8px 4px 16px; }
-.place h2 { margin: 0; font-size: 2rem; color: var(--blue); }
+.place h2 { margin: 0; font-size: 2rem; color: var(--blue-text); }
 .country { margin: 2px 0 0; font-size: 1.1rem; color: var(--muted); }
 
 .grid {
@@ -149,7 +153,7 @@ h1 {
 .unit { font-size: 1.2rem; font-weight: 600; margin-left: 2px; color: var(--muted); }
 .sub { margin: 4px 0 0; }
 .muted { color: var(--muted); font-size: 0.9rem; }
-.diff { font-size: 0.9rem; font-weight: 600; color: var(--red); }
+.diff { font-size: 0.9rem; font-weight: 600; color: var(--red-text); }
 .search input::-webkit-search-cancel-button { cursor: pointer; }
 
 .conv-label { margin: 12px 0 4px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
@@ -211,11 +215,10 @@ h1 {
 
 .temp-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .wx-icon svg { width: 72px; height: 72px; display: block; }
-.wx-label { margin: 8px 0 0; font-weight: 600; color: var(--blue); }
-@media (prefers-color-scheme: dark) { .wx-label { color: #8fb3f0; } }
+.wx-label { margin: 8px 0 0; font-weight: 600; color: var(--blue-text); }
 
 .foot { margin-top: 32px; text-align: center; font-size: 0.85rem; color: var(--muted); }
-.foot a { color: var(--blue); }
+.foot a { color: var(--blue-text); }
 
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; overflow: hidden;

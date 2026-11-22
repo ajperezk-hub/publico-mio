@@ -1,458 +1,382 @@
-// City Pulse — local time, weather and currency for a city, converted to the viewer's own currency.
-// Data: Open-Meteo (geocoding + weather, no key) and open.er-api.com (exchange rates, no key).
+// City Pulse: time, weather and currency for any city, and the same for where you are.
+// Data (no keys needed): Open-Meteo for city search and weather, ExchangeRate-API for
+// exchange rates, BigDataCloud for the name and country of your location.
+// Lookup tables (COUNTRY_CURRENCY, COUNTRY_ALIASES, REGION_CODES) are in data.js,
+// weather pictures (weatherVisual) in icons.js.
 
-const GEO_URL = "https://geocoding-api.open-meteo.com/v1/search";
-const WEATHER_URL = "https://api.open-meteo.com/v1/forecast";
-const RATES_URL = "https://open.er-api.com/v6/latest";
-const REVERSE_URL = "https://api.bigdatacloud.net/data/reverse-geocode-client";
+const API = {
+  search: "https://geocoding-api.open-meteo.com/v1/search",
+  weather: "https://api.open-meteo.com/v1/forecast",
+  rates: "https://open.er-api.com/v6/latest",
+  place: "https://api.bigdatacloud.net/data/reverse-geocode-client"
+};
+const TIMEOUT_MS = 10 * 1000;
+const RATES_TTL_MS = 60 * 60 * 1000;   // rates change once a day; keep them an hour
+const REFRESH_MS = 15 * 60 * 1000;     // refresh weather while the page is open
+const FALLBACK_CURRENCY = "CHF";
+const LAST_CITY_KEY = "cityPulse.lastCity";
 
 const $ = (id) => document.getElementById(id);
 
-let clockTimer = null;
-let hereClockTimer = null;
-let latestSearch = 0; // increases with every search; older answers are ignored
-let currentPlace = null; // the destination on screen, for refreshing its weather
-let destTimezone = null;
-const REFRESH_MS = 15 * 60 * 1000; // weather is refreshed every 15 minutes
+const state = {
+  dest: null,          // the city on screen: { place, timezone, currency }
+  here: {              // you
+    coords: null,      // { lat, lon }, rounded to about 1 km
+    timezone: null,    // null until known: the device's own zone is used
+    currency: currencyFromDeviceRegion() || FALLBACK_CURRENCY
+  },
+  searchId: 0,         // only the newest search may update the screen
+  lastRefresh: Date.now()
+};
 
-const LAST_CITY_KEY = "cityPulse.lastCity";
-function saveLastCity(text) { try { localStorage.setItem(LAST_CITY_KEY, text); } catch { /* storage off */ } }
-function loadLastCity() { try { return localStorage.getItem(LAST_CITY_KEY) || ""; } catch { return ""; } }
+// ---- Fetching ---------------------------------------------------------------
 
-function setStatus(message, isError = false) {
-  const el = $("status");
-  el.textContent = message;
-  el.classList.toggle("error", isError);
-}
-
-// Fetches JSON with a time limit and a message people can act on.
-async function getJSON(url, what = "the data service", timeoutMs = 10000) {
+// JSON with a time limit, and errors that say what to do.
+async function fetchJSON(url, service) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let res;
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`${service} is not available right now (error ${res.status}). Please try again later.`);
+    return await res.json();
   } catch (err) {
-    throw new Error(err.name === "AbortError"
-      ? `${what} took too long to answer. Please try again.`
-      : `Couldn't reach ${what}. Check your internet connection and try again.`);
+    if (err.name === "AbortError") throw new Error(`${service} took too long to answer. Please try again.`);
+    if (err instanceof TypeError) throw new Error(`Couldn't reach ${service}. Check your internet connection and try again.`);
+    throw err;
   } finally {
     clearTimeout(timer);
   }
-  if (!res.ok) throw new Error(`${what} is not available right now (error ${res.status}). Please try again later.`);
-  return res.json();
 }
 
-const fold = (text) => String(text).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+const fold = (text) => String(text || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 
-// Common ways people write a country that differ from its official name.
-const COUNTRY_ALIASES = {
-  uk: "gb", "great britain": "gb", britain: "gb", england: "gb", scotland: "gb", wales: "gb",
-  usa: "us", "u.s.": "us", "u.s.a.": "us", america: "us", "united states of america": "us",
-  uae: "ae", emirates: "ae", holland: "nl", "the netherlands": "nl",
-  "south korea": "kr", korea: "kr", "north korea": "kp", russia: "ru", "czech republic": "cz",
-  czechia: "cz", "ivory coast": "ci", turkey: "tr", turkiye: "tr", vietnam: "vn",
-  schweiz: "ch", suisse: "ch", svizzera: "ch", deutschland: "de", espana: "es", italia: "it"
-};
-
-// Accepts "City" or "City, Country/Region" (e.g. "Paris, Texas" or "Paris, FR").
-function parseQuery(text) {
-  const parts = text.split(",").map((p) => p.trim()).filter(Boolean);
-  return { name: parts[0] || "", qualifierText: parts.slice(1).join(", "), qualifier: fold(parts.slice(1).join(" ")) };
-}
-
-// US state and Canadian province abbreviations ("Paris, TX", "London, ON").
-const REGION_CODES = {
-  us: { al: "alabama", ak: "alaska", az: "arizona", ar: "arkansas", ca: "california", co: "colorado",
-    ct: "connecticut", de: "delaware", dc: "district of columbia", fl: "florida", ga: "georgia", hi: "hawaii",
-    id: "idaho", il: "illinois", in: "indiana", ia: "iowa", ks: "kansas", ky: "kentucky", la: "louisiana",
-    me: "maine", md: "maryland", ma: "massachusetts", mi: "michigan", mn: "minnesota", ms: "mississippi",
-    mo: "missouri", mt: "montana", ne: "nebraska", nv: "nevada", nh: "new hampshire", nj: "new jersey",
-    nm: "new mexico", ny: "new york", nc: "north carolina", nd: "north dakota", oh: "ohio", ok: "oklahoma",
-    or: "oregon", pa: "pennsylvania", ri: "rhode island", sc: "south carolina", sd: "south dakota",
-    tn: "tennessee", tx: "texas", ut: "utah", vt: "vermont", va: "virginia", wa: "washington",
-    wv: "west virginia", wi: "wisconsin", wy: "wyoming" },
-  ca: { ab: "alberta", bc: "british columbia", mb: "manitoba", nb: "new brunswick",
-    nl: "newfoundland and labrador", ns: "nova scotia", nt: "northwest territories", nu: "nunavut",
-    on: "ontario", pe: "prince edward island", qc: "quebec", sk: "saskatchewan", yt: "yukon" }
-};
-
+// Does a search result match what was typed after the comma ("UK", "TX", "Texas", "ile")?
 function matchesQualifier(place, q) {
-  const code = (place.country_code || "").toLowerCase();
-  if (COUNTRY_ALIASES[q] && COUNTRY_ALIASES[q] === code) return true;
-  if (q.length === 2) {
-    const region = REGION_CODES[code] && REGION_CODES[code][q];
-    return code === q || (region && fold(place.admin1 || "") === region);
-  }
-  const fields = [place.country, place.admin1, place.admin2, place.admin3].filter(Boolean).map(fold);
-  return fields.some((f) => f === q || f.startsWith(q));
+  const country = (place.country_code || "").toLowerCase();
+  if (COUNTRY_ALIASES[q] === country) return true;
+  if (q.length === 2) return q === country || REGION_CODES[country]?.[q] === fold(place.admin1);
+  return [place.country, place.admin1, place.admin2, place.admin3]
+    .some((field) => field && fold(field).startsWith(q));
 }
 
+// "City" or "City, Country/Region" -> the best matching place.
 async function findCity(text) {
-  const { name, qualifier, qualifierText } = parseQuery(text);
+  const [name, ...rest] = text.split(",").map((part) => part.trim());
+  const qualifiers = rest.filter(Boolean);
+  const qualifierText = qualifiers.join(", ");
   if (!name) throw new Error("Please type a city name.");
-  const url = `${GEO_URL}?name=${encodeURIComponent(name)}&count=20&language=en&format=json`;
-  const data = await getJSON(url, "the city search service");
-  const places = data.results || [];
+  const url = `${API.search}?name=${encodeURIComponent(name)}&count=20&language=en&format=json`;
+  const places = (await fetchJSON(url, "The city search service")).results || [];
   if (!places.length) throw new Error(`No city called "${name}" was found.`);
-  if (!qualifier) return places[0];
-  const match = places.find((p) => matchesQualifier(p, qualifier));
+  if (!qualifierText) return places[0];
+  const match = places.find((p) => qualifiers.every((q) => matchesQualifier(p, fold(q))));
   if (!match) throw new Error(`No "${name}" was found in "${qualifierText}". Try just "${name}", or a different country or region.`);
   return match;
 }
 
-async function getWeather(place) {
-  const url = `${WEATHER_URL}?latitude=${place.latitude}&longitude=${place.longitude}` +
-    `&current=temperature_2m,relative_humidity_2m,weather_code,is_day&timezone=auto`;
-  const data = await getJSON(url, "the weather service");
-  const cur = data.current || {};
-  const num = (v) => (typeof v === "number" ? v : null);
+async function getWeather(lat, lon) {
+  const url = `${API.weather}?latitude=${lat}&longitude=${lon}` +
+    "&current=temperature_2m,relative_humidity_2m,weather_code,is_day&timezone=auto";
+  const data = await fetchJSON(url, "The weather service");
+  const now = data.current || {};
   return {
-    tempC: num(cur.temperature_2m),
-    humidity: num(cur.relative_humidity_2m),
-    code: num(cur.weather_code),
-    isDay: num(cur.is_day),
-    timezone: data.timezone || place.timezone || null
+    tempC: now.temperature_2m,
+    humidity: now.relative_humidity_2m,
+    code: now.weather_code,
+    isDay: now.is_day,
+    timezone: data.timezone || null
   };
 }
 
-// One decimal, without showing "-0.0".
-const oneDecimal = (n) => { const t = n.toFixed(1); return t === "-0.0" ? "0.0" : t; };
-const toF = (c) => oneDecimal(c * 9 / 5 + 32);
-
-// Rates change once a day, so keep each one for an hour instead of asking every search.
-const rateCache = new Map();
-const RATE_TTL_MS = 60 * 60 * 1000;
-
-// How many units of `to` one unit of `from` buys. One request per base currency gives all rates.
-async function getRate(from, to) {
-  if (from === to) return 1;
-  let cached = rateCache.get(from);
-  if (!cached || Date.now() - cached.at > RATE_TTL_MS) {
-    const data = await getJSON(`${RATES_URL}/${encodeURIComponent(from)}`, "the exchange-rate service");
-    if (!data || data.result !== "success" || !data.rates) throw new Error(`No exchange rates available for ${from}.`);
-    cached = { rates: data.rates, at: Date.now() };
-    rateCache.set(from, cached);
-  }
-  const rate = cached.rates[to];
-  if (typeof rate !== "number" || !(rate > 0)) throw new Error(`No ${to} rate available for ${from}.`);
-  return rate;
+// One request per base currency returns all its rates; share it for an hour.
+const ratesCache = new Map();
+function getRates(base) {
+  const hit = ratesCache.get(base);
+  if (hit && Date.now() - hit.at < RATES_TTL_MS) return hit.promise;
+  const promise = fetchJSON(`${API.rates}/${encodeURIComponent(base)}`, "The exchange-rate service")
+    .then((data) => {
+      if (data.result !== "success" || !data.rates) throw new Error(`No exchange rates for ${base}.`);
+      return data.rates;
+    });
+  promise.catch(() => ratesCache.delete(base)); // don't keep failures
+  ratesCache.set(base, { at: Date.now(), promise });
+  return promise;
 }
 
-// ---- Your currency ---------------------------------------------------------
-// Taken from your location's country; before that (or if location is off), from the
-// phone's region setting (e.g. en-US -> USD); Swiss francs if neither is known.
-const FALLBACK_CURRENCY = "CHF";
+// { from, to, rate } where rate is how many `to` one `from` buys (null if unavailable).
+async function conversion(from) {
+  const to = state.here.currency;
+  if (!from) return null;
+  if (from === to) return { from, to, rate: 1 };
+  try {
+    const rate = (await getRates(from))[to];
+    return { from, to, rate: rate > 0 ? rate : null };
+  } catch {
+    return { from, to, rate: null };
+  }
+}
+
+async function getPlaceName(lat, lon) {
+  const url = `${API.place}?latitude=${lat}&longitude=${lon}&localityLanguage=en`;
+  const data = await fetchJSON(url, "The area-name service");
+  return {
+    name: [data.city || data.locality || data.principalSubdivision, data.countryName].filter(Boolean).join(", "),
+    countryCode: (data.countryCode || "").toUpperCase()
+  };
+}
+
+// ---- Formatting -------------------------------------------------------------
+
+const isNum = (v) => typeof v === "number" && Number.isFinite(v);
+const oneDecimal = (n) => (Math.round(n * 10) / 10 || 0).toFixed(1); // "|| 0" turns -0 into 0
+const toF = (c) => oneDecimal(c * 9 / 5 + 32);
+
+// 184.77 · 1.2500 · 0.80 · 0.005412 · 0.00003126
+function formatRate(rate) {
+  if (rate >= 1) return rate.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: rate >= 10 ? 2 : 4 });
+  const text = rate.toLocaleString("en-US", { maximumSignificantDigits: 4 });
+  const decimals = (text.split(".")[1] || "").length;
+  return decimals >= 2 ? text : (decimals ? text + "0" : text + ".00");
+}
+
+function currencyName(code) {
+  try { return new Intl.DisplayNames(["en"], { type: "currency" }).of(code); } catch { return code; }
+}
 
 function currencyFromDeviceRegion() {
   try {
     for (const tag of navigator.languages || [navigator.language]) {
-      const region = new Intl.Locale(tag).maximize().region;
-      if (region && COUNTRY_CURRENCY[region]) return COUNTRY_CURRENCY[region];
+      const currency = COUNTRY_CURRENCY[new Intl.Locale(tag).maximize().region];
+      if (currency) return currency;
     }
   } catch { /* older browser */ }
   return null;
 }
 
-let homeCurrency = currencyFromDeviceRegion() || FALLBACK_CURRENCY;
-let destCurrency = null;
-let conversionId = 0;
-
-function setHomeCurrency(code) {
-  if (!code || code === homeCurrency) return;
-  homeCurrency = code;
-  if (destCurrency) updateConversion();
+// Minutes the zone is ahead of UTC right now (daylight saving included).
+function utcOffset(timezone, date = new Date()) {
+  const p = {};
+  new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric",
+    hour: "numeric", minute: "numeric"
+  }).formatToParts(date).forEach(({ type, value }) => { p[type] = Number(value); });
+  const local = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
+  return Math.round((local - Math.floor(date.getTime() / 60000) * 60000) / 60000);
 }
 
-// Fetches and shows the destination -> your currency conversion. Returns false if the rate failed.
-async function updateConversion() {
-  const id = ++conversionId;
-  const from = destCurrency, to = homeCurrency;
-  if (!from) return true;
-  let rate = null;
-  try { rate = await getRate(from, to); } catch { /* shown as unavailable below */ }
-  if (id !== conversionId) return true; // a newer conversion took over
-  showConversion(from, to, rate);
-  return rate !== null;
-}
-
-function currencyName(code) {
+function timeDifference(timezone) {
   try {
-    return new Intl.DisplayNames(["en"], { type: "currency" }).of(code) || code;
-  } catch {
-    return code;
-  }
-}
-
-// Big rates get 2 decimals (184.77); small ones keep 4 meaningful digits (0.005412, 0.00003126).
-function formatRate(rate) {
-  if (rate >= 10) return rate.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (rate >= 1) return rate.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-  const text = rate.toLocaleString("en-US", { maximumSignificantDigits: 4 });
-  const decimals = (text.split(".")[1] || "").length;
-  return decimals >= 2 ? text : decimals === 1 ? text + "0" : text + ".00"; // 0.8 -> 0.80
-}
-
-// Starts a ticking clock in the given elements; returns the timer id.
-function runClock(timeEl, dateEl, timezone, dateStyle) {
-  const opts = timezone ? { timeZone: timezone } : {};
-  const timeFmt = new Intl.DateTimeFormat("en-GB", { ...opts, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  const dateFmt = new Intl.DateTimeFormat("en-GB", { ...opts, ...dateStyle });
-  const tick = () => {
-    const now = new Date();
-    timeEl.textContent = timeFmt.format(now);
-    if (dateEl) dateEl.textContent = dateFmt.format(now);
-  };
-  tick();
-  return setInterval(tick, 1000);
-}
-
-// Minutes a time zone is ahead of UTC right now (handles daylight saving).
-function utcOffsetMinutes(timezone, date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit"
-  }).formatToParts(date).reduce((acc, p) => ({ ...acc, [p.type]: Number(p.value) }), {});
-  const asUTC = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
-  return Math.round((asUTC - Math.floor(date.getTime() / 1000) * 1000) / 60000);
-}
-
-let hereTimezone = null; // set once your location is known; otherwise the device's zone
-
-function timeDifferenceText(timezone) {
-  const mine = hereTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-  try {
-    const diff = utcOffsetMinutes(timezone) - utcOffsetMinutes(mine);
+    const mine = state.here.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const diff = utcOffset(timezone) - utcOffset(mine);
     if (diff === 0) return "Same time as you";
     const h = Math.floor(Math.abs(diff) / 60), m = Math.abs(diff) % 60;
-    const amount = m ? `${h} h ${m} min` : `${h} h`;
-    return `${amount} ${diff > 0 ? "ahead of" : "behind"} you`;
+    return `${m ? `${h} h ${m} min` : `${h} h`} ${diff > 0 ? "ahead of" : "behind"} you`;
   } catch {
     return "";
   }
 }
 
-function startClock(timezone) {
-  clearInterval(clockTimer);
-  if (!timezone) {
-    $("time").textContent = "—";
-    $("date").textContent = "";
-    $("tz").textContent = "Time zone unknown";
-    $("tzDiff").textContent = "";
-    return;
-  }
-  $("tz").textContent = timezone.replace(/_/g, " ");
-  $("tzDiff").textContent = timeDifferenceText(timezone);
-  clockTimer = runClock($("time"), $("date"), timezone,
-    { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+// ---- Showing things ---------------------------------------------------------
+
+function setStatus(message, isError = false) {
+  $("status").textContent = message;
+  $("status").classList.toggle("error", isError);
 }
 
-function showWeather(w) {
-  if (!w || w.tempC === null) {
-    $("tempC").textContent = "—";
-    $("tempF").textContent = "—";
-  } else {
-    $("tempC").textContent = oneDecimal(w.tempC);
-    $("tempF").textContent = toF(w.tempC);
-  }
-  const visual = w && w.code !== null ? weatherVisual(w.code, w.isDay) : { label: "", svg: "" };
-  $("wxIcon").innerHTML = visual.svg;
-  $("wxLabel").textContent = visual.label;
-  if (!w || w.humidity === null) {
-    $("humidity").textContent = "—";
-    $("humBar").style.width = "0";
-  } else {
-    $("humidity").textContent = Math.round(w.humidity);
-    $("humBar").style.width = `${Math.max(0, Math.min(100, w.humidity))}%`;
-  }
+// A ticking clock; `timezone` null means the device's own zone.
+const clocks = {};
+function startClock(name, timezone, dateOptions) {
+  clearInterval(clocks[name]);
+  const zone = timezone ? { timeZone: timezone } : {};
+  const time = new Intl.DateTimeFormat("en-GB", { ...zone, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const date = new Intl.DateTimeFormat("en-GB", { ...zone, ...dateOptions });
+  const tick = () => {
+    const now = new Date();
+    $(`${name}Time`).textContent = time.format(now);
+    $(`${name}Date`).textContent = date.format(now);
+  };
+  tick();
+  clocks[name] = setInterval(tick, 1000);
 }
 
-function showCurrency(currency) {
-  if (!currency) {
-    $("currency").textContent = "—";
-    $("currencyName").textContent = "Currency unknown for this country";
-    $("convLabel").textContent = "";
-    $("conv").textContent = "";
-    return;
-  }
-  $("currency").textContent = currency;
-  $("currencyName").textContent = currencyName(currency);
+// Fills one weather panel. Element ids are `${name}TempC`, `${name}TempF`, `${name}Hum`,
+// `${name}Icon`, `${name}Cond` and optionally `${name}HumBar`.
+function showWeather(name, w) {
+  const temp = isNum(w?.tempC), hum = isNum(w?.humidity);
+  const visual = isNum(w?.code) ? weatherVisual(w.code, w.isDay) : { label: "", svg: "" };
+  $(`${name}TempC`).textContent = temp ? oneDecimal(w.tempC) : "—";
+  $(`${name}TempF`).textContent = temp ? toF(w.tempC) : "—";
+  $(`${name}Hum`).textContent = hum ? Math.round(w.humidity) : "—";
+  $(`${name}Icon`).innerHTML = visual.svg;
+  $(`${name}Cond`).textContent = visual.label;
+  const bar = $(`${name}HumBar`);
+  if (bar) bar.style.width = hum ? `${Math.min(100, Math.max(0, w.humidity))}%` : "0";
 }
 
-function showConversion(from, to, rate) {
-  $("convLabel").textContent = `In your currency (${to})`;
-  if (from === to) {
-    $("conv").textContent = `Same currency as you\n1 ${from} = 1 ${to}`;
-  } else if (typeof rate === "number") {
-    $("conv").textContent = `1 ${from} = ${formatRate(rate)} ${to}\n` +
-      `1 ${to} = ${formatRate(1 / rate)} ${from}`;
-  } else {
-    $("conv").textContent = `${to} rate unavailable right now`;
-  }
+function showConversion(conv) {
+  $("convLabel").textContent = conv ? `In your currency (${conv.to})` : "";
+  if (!conv) $("conv").textContent = "";
+  else if (conv.from === conv.to) $("conv").textContent = `Same currency as you\n1 ${conv.from} = 1 ${conv.to}`;
+  else if (conv.rate) $("conv").textContent =
+    `1 ${conv.from} = ${formatRate(conv.rate)} ${conv.to}\n1 ${conv.to} = ${formatRate(1 / conv.rate)} ${conv.from}`;
+  else $("conv").textContent = `${conv.to} rate unavailable right now`;
 }
 
-async function search(text) {
-  const id = ++latestSearch;
-  setStatus("Searching…");
-
-  const place = await findCity(text);
-  if (id !== latestSearch) return;
-
-  const currency = COUNTRY_CURRENCY[(place.country_code || "").toUpperCase()] || null;
-  const weatherRes = await getWeather(place).then((value) => ({ ok: true, value }), () => ({ ok: false }));
-  if (id !== latestSearch) return;
-  const weather = weatherRes.ok ? weatherRes.value : null;
-
+function showDestination({ place, timezone, currency }, weather, conv) {
   $("cityName").textContent = place.name;
   const region = place.admin1 && place.admin1 !== place.name ? `${place.admin1}, ` : "";
-  $("country").textContent = `${region}${place.country || place.country_code || "Unknown country"}`;
+  $("country").textContent = region + (place.country || place.country_code || "Unknown country");
 
-  currentPlace = place;
-  destTimezone = (weather && weather.timezone) || place.timezone;
-  saveLastCity(text);
-  startClock(destTimezone);
-  showWeather(weather);
-  showCurrency(currency);
-  destCurrency = currency;
-  const rateOk = await updateConversion();
-  if (id !== latestSearch) return;
-  $("result").hidden = false;
-
-  const problems = [];
-  if (!weatherRes.ok) problems.push("weather");
-  if (!rateOk) problems.push("exchange rate");
-  setStatus(problems.length ? `Some data could not be loaded: ${problems.join(" and ")}.` : "",
-    problems.length > 0);
-}
-
-$("search").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const city = $("city").value.trim();
-  if (!city) return;
-  const button = $("go");
-  button.disabled = true;
-  const searchId = latestSearch + 1; // the id search() is about to take
-  try {
-    await search(city);
-  } catch (err) {
-    // Only report errors from the most recent search.
-    if (searchId === latestSearch) {
-      setStatus(err.message || "Something went wrong. Please try again.", true);
-    }
-  } finally {
-    if (searchId === latestSearch) button.disabled = false;
-  }
-});
-
-// ---- Your location -------------------------------------------------------
-
-async function nameForCoords(lat, lon) {
-  try {
-    const data = await getJSON(`${REVERSE_URL}?latitude=${lat}&longitude=${lon}&localityLanguage=en`, "the area-name service");
-    const city = data.city || data.locality || data.principalSubdivision || "";
-    const country = data.countryName || "";
-    return {
-      name: [city, country].filter(Boolean).join(", ") || null,
-      countryCode: (data.countryCode || "").toUpperCase() || null
-    };
-  } catch {
-    return { name: null, countryCode: null };
-  }
-}
-
-function showHereWeather(w) {
-  const has = (v) => w && v !== null && v !== undefined;
-  $("hereTempC").textContent = has(w && w.tempC) ? oneDecimal(w.tempC) : "—";
-  $("hereTempF").textContent = has(w && w.tempC) ? toF(w.tempC) : "—";
-  $("hereHum").textContent = has(w && w.humidity) ? Math.round(w.humidity) : "—";
-  const visual = has(w && w.code) ? weatherVisual(w.code, w.isDay) : { label: "", svg: "" };
-  $("hereIcon").innerHTML = visual.svg;
-  $("hereCond").textContent = visual.label;
-}
-
-function startHereClock(timezone) {
-  clearInterval(hereClockTimer);
-  hereClockTimer = runClock($("hereTime"), $("hereDate"), timezone,
-    { weekday: "short", day: "numeric", month: "short" });
-}
-
-let hereCoords = null;
-
-async function loadHere(lat, lon) {
-  hereCoords = { lat, lon };
-  $("locate").hidden = true;
-  $("herePlace").textContent = "Loading your weather…";
-  const [weatherRes, where] = await Promise.all([
-    getWeather({ latitude: lat, longitude: lon }).then((w) => ({ ok: true, w }), () => ({ ok: false })),
-    nameForCoords(lat, lon)
-  ]);
-  const name = where.name;
-  setHomeCurrency(COUNTRY_CURRENCY[where.countryCode]);
-  if (weatherRes.ok) {
-    showHereWeather(weatherRes.w);
-    if (weatherRes.w.timezone) {
-      hereTimezone = weatherRes.w.timezone;
-      startHereClock(hereTimezone);
-      if (destTimezone) $("tzDiff").textContent = timeDifferenceText(destTimezone);
-    }
-    $("herePlace").textContent = name || "Near you";
+  if (timezone) {
+    startClock("dest", timezone, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    $("tz").textContent = timezone.replace(/_/g, " ");
   } else {
-    $("herePlace").textContent = (name ? name + " · " : "") + "Weather could not be loaded.";
-    $("locate").textContent = "Try again";
-    $("locate").hidden = false;
+    clearInterval(clocks.dest);
+    $("destTime").textContent = "—";
+    $("destDate").textContent = "";
+    $("tz").textContent = "Time zone unknown";
+  }
+  $("tzDiff").textContent = timezone ? timeDifference(timezone) : "";
+
+  showWeather("dest", weather);
+  $("currency").textContent = currency || "—";
+  $("currencyName").textContent = currency ? currencyName(currency) : "Currency unknown for this country";
+  showConversion(conv);
+  $("result").hidden = false;
+}
+
+// ---- Searching a city ---------------------------------------------------------
+
+async function search(text) {
+  const id = ++state.searchId;
+  const isCurrent = () => id === state.searchId;
+  $("go").disabled = true;
+  setStatus("Searching…");
+  try {
+    const place = await findCity(text);
+    if (!isCurrent()) return;
+    const currency = COUNTRY_CURRENCY[(place.country_code || "").toUpperCase()] || null;
+    const [weather, conv] = await Promise.all([
+      getWeather(place.latitude, place.longitude).catch(() => null),
+      conversion(currency)
+    ]);
+    if (!isCurrent()) return;
+
+    state.dest = { place, currency, timezone: weather?.timezone || place.timezone || null };
+    showDestination(state.dest, weather, conv);
+    if (conv && conv.to !== state.here.currency) refreshConversion(); // your currency changed meanwhile
+    try { localStorage.setItem(LAST_CITY_KEY, text); } catch { /* storage off */ }
+
+    const missing = [!weather && "weather", conv && !conv.rate && "exchange rate"].filter(Boolean);
+    setStatus(missing.length ? `Some data could not be loaded: ${missing.join(" and ")}.` : "", missing.length > 0);
+  } catch (err) {
+    if (isCurrent()) setStatus(err.message || "Something went wrong. Please try again.", true);
+  } finally {
+    if (isCurrent()) $("go").disabled = false;
   }
 }
 
-// Quietly refresh both weather panels so a page left open stays current.
-async function refreshWeather() {
-  if (hereCoords) loadHere(hereCoords.lat, hereCoords.lon);
-  if (currentPlace) {
-    const place = currentPlace;
-    try {
-      const w = await getWeather(place);
-      if (place === currentPlace) showWeather(w);
-    } catch { /* keep what is on screen; the next refresh will try again */ }
-  }
+async function refreshConversion() {
+  const dest = state.dest;
+  if (!dest) return;
+  const conv = await conversion(dest.currency);
+  if (dest === state.dest && (!conv || conv.to === state.here.currency)) showConversion(conv);
 }
-let lastRefresh = Date.now();
-setInterval(() => { refreshWeather(); lastRefresh = Date.now(); }, REFRESH_MS);
-document.addEventListener("visibilitychange", () => {
-  // Phones pause timers in the background, so catch up when the page is shown again.
-  if (document.visibilityState === "visible" && Date.now() - lastRefresh > REFRESH_MS) {
-    lastRefresh = Date.now();
-    refreshWeather();
-  }
+
+$("search").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const text = $("city").value.trim();
+  if (text) search(text);
 });
+
+// ---- Your location --------------------------------------------------------------
 
 function locate() {
-  if (!("geolocation" in navigator)) {
+  $("locate").hidden = true;
+  if (!navigator.geolocation) {
     $("herePlace").textContent = "This browser can't share your location. Showing your device time.";
     return;
   }
-  $("locate").hidden = true;
   $("herePlace").textContent = "Finding where you are…";
   navigator.geolocation.getCurrentPosition(
-    // Rounded to about 1 km: enough for weather, and more private.
-    (pos) => loadHere(pos.coords.latitude.toFixed(2), pos.coords.longitude.toFixed(2)),
+    (pos) => {
+      // Rounded to about 1 km: enough for weather, and more private.
+      state.here.coords = { lat: pos.coords.latitude.toFixed(2), lon: pos.coords.longitude.toFixed(2) };
+      loadHere();
+    },
     (err) => {
       $("herePlace").textContent = err.code === err.PERMISSION_DENIED
         ? "Location is off. Showing your device time only."
         : "Couldn't find your location. Showing your device time only.";
-      $("locate").textContent = "Use my location";
-      $("locate").hidden = false;
+      offerRetry("Use my location");
     },
-    { enableHighAccuracy: false, timeout: 15000, maximumAge: 10 * 60 * 1000 }
+    { timeout: 15000, maximumAge: 10 * 60 * 1000 }
   );
 }
 
+function offerRetry(label) {
+  $("locate").textContent = label;
+  $("locate").hidden = false;
+}
+
+// `quiet` (used by the regular refresh) keeps what's on screen if something fails.
+async function loadHere(quiet = false) {
+  const { lat, lon } = state.here.coords;
+  if (!quiet) $("herePlace").textContent = "Loading your weather…";
+  const [weather, where] = await Promise.all([
+    getWeather(lat, lon).catch(() => null),
+    getPlaceName(lat, lon).catch(() => ({}))
+  ]);
+
+  const currency = COUNTRY_CURRENCY[where.countryCode];
+  if (currency && currency !== state.here.currency) {
+    state.here.currency = currency;
+    refreshConversion();
+  }
+
+  if (weather) {
+    showWeather("here", weather);
+    $("herePlace").textContent = where.name || "Near you";
+    if (weather.timezone && weather.timezone !== state.here.timezone) {
+      state.here.timezone = weather.timezone;
+      startClock("here", weather.timezone, { weekday: "short", day: "numeric", month: "short" });
+      if (state.dest?.timezone) $("tzDiff").textContent = timeDifference(state.dest.timezone);
+    }
+  } else if (!quiet) {
+    $("herePlace").textContent = (where.name ? `${where.name} · ` : "") + "Weather could not be loaded.";
+    offerRetry("Try again");
+  }
+}
+
 $("locate").addEventListener("click", locate);
-startHereClock(null); // device time right away, even before location is known
-showHereWeather(null);
+
+// ---- Keeping it fresh ---------------------------------------------------------
+
+async function refresh() {
+  state.lastRefresh = Date.now();
+  if (state.here.coords) loadHere(true);
+  const dest = state.dest;
+  if (dest) {
+    const weather = await getWeather(dest.place.latitude, dest.place.longitude).catch(() => null);
+    if (weather && dest === state.dest) showWeather("dest", weather);
+  }
+}
+
+setInterval(refresh, REFRESH_MS);
+document.addEventListener("visibilitychange", () => {
+  // Phones pause timers in the background, so catch up when the page is shown again.
+  if (document.visibilityState === "visible" && Date.now() - state.lastRefresh > REFRESH_MS) refresh();
+});
+
+// ---- Start ------------------------------------------------------------------------
+
+startClock("here", null, { weekday: "short", day: "numeric", month: "short" }); // device time until located
+showWeather("here", null);
 locate();
 
-// Show the last city searched, if there is one.
-const lastCity = loadLastCity();
+let lastCity = "";
+try { lastCity = localStorage.getItem(LAST_CITY_KEY) || ""; } catch { /* storage off */ }
 if (lastCity) {
   $("city").value = lastCity;
-  $("search").requestSubmit();
+  search(lastCity);
 }
