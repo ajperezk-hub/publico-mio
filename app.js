@@ -52,7 +52,8 @@ async function fetchJSON(url, service) {
   }
 }
 
-const fold = (text) => String(text || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+// Lower case without accents, so "ile" matches "Île".
+const fold = (text) => String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
 // Does a search result match what was typed after the comma ("UK", "TX", "Texas", "ile")?
 function matchesQualifier(place, q) {
@@ -174,7 +175,7 @@ const isNum = (v) => typeof v === "number" && Number.isFinite(v);
 const oneDecimal = (n) => (Math.round(n * 10) / 10 || 0).toFixed(1); // "|| 0" turns -0 into 0
 const toF = (c) => oneDecimal(c * 9 / 5 + 32);
 
-// 184.77 · 1.2500 · 0.80 · 0.005412 · 0.00003126
+// 184.77 · 1.25 · 1.2346 · 0.80 · 0.005412 · 0.00003126
 function formatRate(rate) {
   if (rate >= 1) return rate.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: rate >= 10 ? 2 : 4 });
   const text = rate.toLocaleString("en-US", { maximumSignificantDigits: 4 });
@@ -461,7 +462,7 @@ function locate() {
     },
     (err) => {
       $("herePlace").textContent = err.code === err.PERMISSION_DENIED
-        ? "Location is off. Showing your device time only."
+        ? "Location is blocked. Showing your device time only. To use it, allow location for this site in your browser settings, then tap the button."
         : "Couldn't find your location. Showing your device time only.";
       offerRetry("Use my location");
     },
@@ -472,6 +473,22 @@ function locate() {
 function offerRetry(label) {
   $("locate").textContent = label;
   $("locate").hidden = false;
+}
+
+// Checks where you are again (you may be travelling), without asking if permission wasn't granted.
+async function relocateQuietly() {
+  try {
+    const permission = await navigator.permissions?.query({ name: "geolocation" });
+    if (permission && permission.state !== "granted") return loadHere(true);
+  } catch { /* can't tell: just refresh the weather where you were */ return loadHere(true); }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      state.here.coords = { lat: pos.coords.latitude.toFixed(2), lon: pos.coords.longitude.toFixed(2) };
+      loadHere(true);
+    },
+    () => loadHere(true),
+    { timeout: 15000, maximumAge: 5 * 60 * 1000 }
+  );
 }
 
 // `quiet` (used by the regular refresh) keeps what's on screen if something fails.
@@ -509,9 +526,10 @@ $("locate").addEventListener("click", locate);
 
 async function refresh() {
   state.lastRefresh = Date.now();
-  if (state.here.coords) loadHere(true);
+  if (state.here.coords) relocateQuietly();
   const dest = state.dest;
   if (dest) {
+    refreshConversion(); // rates are fetched again once they're over an hour old
     const weather = await getWeather(dest.place.latitude, dest.place.longitude).catch(() => null);
     if (weather && dest === state.dest) showWeather("dest", weather);
   }
@@ -535,7 +553,7 @@ try {
   lastPlace = JSON.parse(localStorage.getItem(LAST_PLACE_KEY) || "null");
   oldLastCity = localStorage.getItem(OLD_LAST_CITY_KEY) || "";
 } catch { /* storage off or unreadable */ }
-if (lastPlace && lastPlace.name && isNum(lastPlace.latitude)) {
+if (lastPlace && typeof lastPlace.name === "string" && isNum(lastPlace.latitude) && isNum(lastPlace.longitude)) {
   $("city").value = placeLabel(lastPlace);
   load(async () => ({ place: lastPlace, places: await searchPlaces(lastPlace.name).catch(() => []) }));
 } else if (oldLastCity) {

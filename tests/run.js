@@ -96,6 +96,7 @@ async function open(browser, { location = null, homeCountry = null, locale = "de
     const { page, text, search, calls, context } = await open(browser);
     await page.waitForFunction(() => !document.getElementById("locate").hidden);
     check("location off message", await text("herePlace"), "Showing your device time only");
+    check("says how to turn location on", await text("herePlace"), "browser settings");
     check("device time shown", await text("hereTime"), ":");
 
     await search("Tokyo");
@@ -242,6 +243,17 @@ async function open(browser, { location = null, homeCountry = null, locale = "de
     await search("Boston");
     check("same currency (USD)", await text("conv"), "Same currency as you");
     check("thunderstorm", await text("destCond"), "Thunderstorm");
+    // Every 15 minutes: you moved, and rates over an hour old are fetched again
+    await search("Tokyo"); // needs a JPY -> USD rate
+    const ratesBefore = calls.rates;
+    await context.setGeolocation({ latitude: 40.7128, longitude: -74.006 });
+    // A phone keeps updating its position; here we make the browser pick up the new one.
+    await page.evaluate(() => new Promise((r) => navigator.geolocation.getCurrentPosition(r, r, { maximumAge: 0 })));
+    await page.evaluate(() => { for (const entry of ratesCache.values()) entry.at -= 2 * 60 * 60 * 1000; });
+    await page.evaluate(() => refresh());
+    await page.waitForFunction(() => document.getElementById("hereCond").textContent === "Partly cloudy");
+    check("refresh notices you moved", calls.weather.includes("40.71"), true);
+    check("refresh fetches old rates again", calls.rates > ratesBefore, true);
     if (SHOTS) {
       await search("Tokyo");
       await page.setViewportSize({ width: 390, height: 844 });
@@ -299,6 +311,21 @@ async function open(browser, { location = null, homeCountry = null, locale = "de
     await context.close();
   }
 
+  // --- A damaged saved place is ignored ---
+  {
+    const { page, text, context } = await open(browser);
+    await page.evaluate(() => localStorage.setItem("cityPulse.lastPlace", JSON.stringify({ name: "Nowhere", latitude: 1 })));
+    await page.reload();
+    await page.waitForTimeout(500);
+    check("damaged saved place ignored", await page.$eval("#result", (e) => e.hidden), true);
+    check("no error shown", await text("status"), "");
+    await page.evaluate(() => localStorage.setItem("cityPulse.lastPlace", "{not json"));
+    await page.reload();
+    await page.waitForTimeout(500);
+    check("unreadable saved place ignored", await page.$eval("#result", (e) => e.hidden), true);
+    await context.close();
+  }
+
   // --- Every weather code has a picture and a label ---
   {
     const { page, context } = await open(browser);
@@ -306,6 +333,9 @@ async function open(browser, { location = null, homeCountry = null, locale = "de
       [0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99]
         .filter((c) => !weatherVisual(c, 1).svg || !weatherVisual(c, 1).label));
     check("all weather codes have pictures", JSON.stringify(missing), "[]");
+    check("accents ignored", await page.evaluate(() => fold("Île-de-FRANCE ") === "ile-de-france"), true);
+    check("every currency code is 3 letters", await page.evaluate(() =>
+      Object.values(COUNTRY_CURRENCY).every((c) => /^[A-Z]{3}$/.test(c))), true);
     await context.close();
   }
 
