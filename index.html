@@ -15,6 +15,33 @@
       <p class="tagline">Time, weather and money for any city in the world</p>
     </header>
 
+    <section id="here" class="here" aria-labelledby="hereTitle">
+      <div class="here-head">
+        <h2 id="hereTitle">Your location</h2>
+        <p id="herePlace" class="here-place">Finding where you are…</p>
+      </div>
+      <div class="here-stats">
+        <div class="stat">
+          <span class="stat-label">Time</span>
+          <span id="hereTime" class="stat-value">—</span>
+          <span id="hereDate" class="stat-sub"></span>
+        </div>
+        <div class="stat stat-temp">
+          <span id="hereIcon" class="here-icon"></span>
+          <span>
+            <span class="stat-label">Temperature</span>
+            <span class="stat-value"><span id="hereTempC">—</span>°C</span>
+            <span class="stat-sub"><span id="hereTempF">—</span> °F · <span id="hereCond"></span></span>
+          </span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Humidity</span>
+          <span class="stat-value"><span id="hereHum">—</span>%</span>
+        </div>
+      </div>
+      <button id="locate" class="locate" type="button" hidden>Use my location</button>
+    </section>
+
     <form id="search" class="search" autocomplete="off">
       <label for="city" class="visually-hidden">City</label>
       <input id="city" name="city" type="text" placeholder="Type a city, e.g. Tokyo or Paris, Texas" required>
@@ -39,8 +66,14 @@
 
         <article class="card card-temp">
           <h3>Temperature</h3>
-          <p class="big"><span id="tempC"></span><span class="unit">°C</span></p>
-          <p class="sub"><span id="tempF"></span> °F</p>
+          <div class="temp-row">
+            <div>
+              <p class="big"><span id="tempC"></span><span class="unit">°C</span></p>
+              <p class="sub"><span id="tempF"></span> °F</p>
+            </div>
+            <div id="wxIcon" class="wx-icon"></div>
+          </div>
+          <p id="wxLabel" class="wx-label"></p>
         </article>
 
         <article class="card card-hum">
@@ -60,11 +93,13 @@
 
     <footer class="foot">
       Weather &amp; places: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> ·
+      Your area name: <a href="https://www.bigdatacloud.com/" target="_blank" rel="noopener">BigDataCloud</a> ·
       Exchange rates: <a href="https://www.exchangerate-api.com/" target="_blank" rel="noopener">ExchangeRate-API</a>
     </footer>
   </main>
 
   <script src="currencies.js"></script>
+  <script src="icons.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

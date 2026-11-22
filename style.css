@@ -176,6 +176,39 @@ h1 {
   transition: width 0.4s ease;
 }
 
+.here {
+  margin-bottom: 20px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--blue), var(--blue-dark));
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 12px;
+}
+.here-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.here h2 { margin: 0; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: #ffd98a; }
+.here-place { margin: 0; font-weight: 600; min-width: 0; }
+.here-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.stat { display: flex; flex-direction: column; min-width: 0; }
+.stat-temp { flex-direction: row; align-items: center; gap: 8px; }
+.stat-temp > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.stat-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.8; }
+.stat-value { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-sub { font-size: 0.85rem; opacity: 0.9; }
+.here-icon { flex: none; width: 48px; height: 48px; border-radius: 12px; background: rgba(255,255,255,0.92); display: grid; place-items: center; }
+.here-icon:empty { display: none; }
+.here-icon svg { width: 40px; height: 40px; }
+.locate {
+  justify-self: start; border: 2px solid #fff; background: transparent; color: #fff;
+  border-radius: 10px; padding: 6px 14px; font-weight: 600; cursor: pointer;
+}
+
+.temp-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wx-icon svg { width: 72px; height: 72px; display: block; }
+.wx-label { margin: 8px 0 0; font-weight: 600; color: var(--blue); }
+@media (prefers-color-scheme: dark) { .wx-label { color: #8fb3f0; } }
+
 .foot { margin-top: 32px; text-align: center; font-size: 0.85rem; color: var(--muted); }
 .foot a { color: var(--blue); }
 
