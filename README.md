@@ -10,7 +10,7 @@ Type a city and see
 - **Local time**: a live clock with the date and time zone
 - **Temperature** in °C and °F, with a picture of the weather (sun, moon, clouds, fog, drizzle, rain, showers, snow, thunderstorm)
 - **Humidity** with a fill bar
-- **Currency** with its name, always converted to **Swiss francs (CHF)** in both directions
+- **Currency** with its name, converted to **your own currency** in both directions. Your currency comes from your location's country. If you don't share your location, it comes from your phone's region setting (e.g. English (US) → USD), and Swiss francs (CHF) are used if neither is known
 
 The colours follow an Optimus Prime palette: Autobot red, deep blue, chrome silver and headlight yellow, on a warm cream background (it also has a dark mode).
 

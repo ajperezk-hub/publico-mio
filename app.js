@@ -1,4 +1,4 @@
-// City Pulse — local time, weather and currency (always with CHF) for a city.
+// City Pulse — local time, weather and currency for a city, converted to the viewer's own currency.
 // Data: Open-Meteo (geocoding + weather, no key) and open.er-api.com (exchange rates, no key).
 
 const GEO_URL = "https://geocoding-api.open-meteo.com/v1/search";
@@ -124,15 +124,56 @@ const toF = (c) => oneDecimal(c * 9 / 5 + 32);
 const rateCache = new Map();
 const RATE_TTL_MS = 60 * 60 * 1000;
 
-async function getChfRate(currency) {
-  if (currency === "CHF") return 1;
-  const cached = rateCache.get(currency);
-  if (cached && Date.now() - cached.at < RATE_TTL_MS) return cached.rate;
-  const data = await getJSON(`${RATES_URL}/${encodeURIComponent(currency)}`, "the exchange-rate service");
-  const rate = data && data.result === "success" && data.rates ? data.rates.CHF : undefined;
-  if (typeof rate !== "number" || !(rate > 0)) throw new Error(`No CHF rate available for ${currency}.`);
-  rateCache.set(currency, { rate, at: Date.now() });
+// How many units of `to` one unit of `from` buys. One request per base currency gives all rates.
+async function getRate(from, to) {
+  if (from === to) return 1;
+  let cached = rateCache.get(from);
+  if (!cached || Date.now() - cached.at > RATE_TTL_MS) {
+    const data = await getJSON(`${RATES_URL}/${encodeURIComponent(from)}`, "the exchange-rate service");
+    if (!data || data.result !== "success" || !data.rates) throw new Error(`No exchange rates available for ${from}.`);
+    cached = { rates: data.rates, at: Date.now() };
+    rateCache.set(from, cached);
+  }
+  const rate = cached.rates[to];
+  if (typeof rate !== "number" || !(rate > 0)) throw new Error(`No ${to} rate available for ${from}.`);
   return rate;
+}
+
+// ---- Your currency ---------------------------------------------------------
+// Taken from your location's country; before that (or if location is off), from the
+// phone's region setting (e.g. en-US -> USD); Swiss francs if neither is known.
+const FALLBACK_CURRENCY = "CHF";
+
+function currencyFromDeviceRegion() {
+  try {
+    for (const tag of navigator.languages || [navigator.language]) {
+      const region = new Intl.Locale(tag).maximize().region;
+      if (region && COUNTRY_CURRENCY[region]) return COUNTRY_CURRENCY[region];
+    }
+  } catch { /* older browser */ }
+  return null;
+}
+
+let homeCurrency = currencyFromDeviceRegion() || FALLBACK_CURRENCY;
+let destCurrency = null;
+let conversionId = 0;
+
+function setHomeCurrency(code) {
+  if (!code || code === homeCurrency) return;
+  homeCurrency = code;
+  if (destCurrency) updateConversion();
+}
+
+// Fetches and shows the destination -> your currency conversion. Returns false if the rate failed.
+async function updateConversion() {
+  const id = ++conversionId;
+  const from = destCurrency, to = homeCurrency;
+  if (!from) return true;
+  let rate = null;
+  try { rate = await getRate(from, to); } catch { /* shown as unavailable below */ }
+  if (id !== conversionId) return true; // a newer conversion took over
+  showConversion(from, to, rate);
+  return rate !== null;
 }
 
 function currencyName(code) {
@@ -147,7 +188,9 @@ function currencyName(code) {
 function formatRate(rate) {
   if (rate >= 10) return rate.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (rate >= 1) return rate.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-  return rate.toLocaleString("en-US", { maximumSignificantDigits: 4 });
+  const text = rate.toLocaleString("en-US", { maximumSignificantDigits: 4 });
+  const decimals = (text.split(".")[1] || "").length;
+  return decimals >= 2 ? text : decimals === 1 ? text + "0" : text + ".00"; // 0.8 -> 0.80
 }
 
 // Starts a ticking clock in the given elements; returns the timer id.
@@ -224,22 +267,27 @@ function showWeather(w) {
   }
 }
 
-function showCurrency(currency, chfRate) {
+function showCurrency(currency) {
   if (!currency) {
     $("currency").textContent = "—";
     $("currencyName").textContent = "Currency unknown for this country";
-    $("chf").textContent = "";
+    $("convLabel").textContent = "";
+    $("conv").textContent = "";
     return;
   }
   $("currency").textContent = currency;
   $("currencyName").textContent = currencyName(currency);
-  if (currency === "CHF") {
-    $("chf").textContent = "This city already uses Swiss francs\n1 CHF = 1 CHF";
-  } else if (typeof chfRate === "number") {
-    $("chf").textContent = `1 ${currency} = ${formatRate(chfRate)} CHF\n` +
-      `1 CHF = ${formatRate(1 / chfRate)} ${currency}`;
+}
+
+function showConversion(from, to, rate) {
+  $("convLabel").textContent = `In your currency (${to})`;
+  if (from === to) {
+    $("conv").textContent = `Same currency as you\n1 ${from} = 1 ${to}`;
+  } else if (typeof rate === "number") {
+    $("conv").textContent = `1 ${from} = ${formatRate(rate)} ${to}\n` +
+      `1 ${to} = ${formatRate(1 / rate)} ${from}`;
   } else {
-    $("chf").textContent = "CHF rate unavailable right now";
+    $("conv").textContent = `${to} rate unavailable right now`;
   }
 }
 
@@ -251,14 +299,9 @@ async function search(text) {
   if (id !== latestSearch) return;
 
   const currency = COUNTRY_CURRENCY[(place.country_code || "").toUpperCase()] || null;
-  const [weatherRes, rateRes] = await Promise.allSettled([
-    getWeather(place),
-    currency ? getChfRate(currency) : Promise.resolve(null)
-  ]);
+  const weatherRes = await getWeather(place).then((value) => ({ ok: true, value }), () => ({ ok: false }));
   if (id !== latestSearch) return;
-
-  const weather = weatherRes.status === "fulfilled" ? weatherRes.value : null;
-  const rate = rateRes.status === "fulfilled" ? rateRes.value : null;
+  const weather = weatherRes.ok ? weatherRes.value : null;
 
   $("cityName").textContent = place.name;
   const region = place.admin1 && place.admin1 !== place.name ? `${place.admin1}, ` : "";
@@ -269,12 +312,15 @@ async function search(text) {
   saveLastCity(text);
   startClock(destTimezone);
   showWeather(weather);
-  showCurrency(currency, rate);
+  showCurrency(currency);
+  destCurrency = currency;
+  const rateOk = await updateConversion();
+  if (id !== latestSearch) return;
   $("result").hidden = false;
 
   const problems = [];
-  if (weatherRes.status === "rejected") problems.push("weather");
-  if (rateRes.status === "rejected") problems.push("exchange rate");
+  if (!weatherRes.ok) problems.push("weather");
+  if (!rateOk) problems.push("exchange rate");
   setStatus(problems.length ? `Some data could not be loaded: ${problems.join(" and ")}.` : "",
     problems.length > 0);
 }
@@ -305,9 +351,12 @@ async function nameForCoords(lat, lon) {
     const data = await getJSON(`${REVERSE_URL}?latitude=${lat}&longitude=${lon}&localityLanguage=en`, "the area-name service");
     const city = data.city || data.locality || data.principalSubdivision || "";
     const country = data.countryName || "";
-    return [city, country].filter(Boolean).join(", ") || null;
+    return {
+      name: [city, country].filter(Boolean).join(", ") || null,
+      countryCode: (data.countryCode || "").toUpperCase() || null
+    };
   } catch {
-    return null;
+    return { name: null, countryCode: null };
   }
 }
 
@@ -333,10 +382,12 @@ async function loadHere(lat, lon) {
   hereCoords = { lat, lon };
   $("locate").hidden = true;
   $("herePlace").textContent = "Loading your weather…";
-  const [weatherRes, name] = await Promise.all([
+  const [weatherRes, where] = await Promise.all([
     getWeather({ latitude: lat, longitude: lon }).then((w) => ({ ok: true, w }), () => ({ ok: false })),
     nameForCoords(lat, lon)
   ]);
+  const name = where.name;
+  setHomeCurrency(COUNTRY_CURRENCY[where.countryCode]);
   if (weatherRes.ok) {
     showHereWeather(weatherRes.w);
     if (weatherRes.w.timezone) {

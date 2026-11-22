@@ -152,8 +152,11 @@ h1 {
 .diff { font-size: 0.9rem; font-weight: 600; color: var(--red); }
 .search input::-webkit-search-cancel-button { cursor: pointer; }
 
-.chf {
-  margin: 12px 0 0;
+.conv-label { margin: 12px 0 4px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.conv-label:empty, .conv:empty { display: none; }
+
+.conv {
+  margin: 0;
   padding: 10px 12px;
   border-radius: 12px;
   background: var(--chrome);
