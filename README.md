@@ -19,9 +19,11 @@ The colours follow an Optimus Prime palette: Autobot red, deep blue, chrome silv
 No installation and no API keys. Open `index.html` in a browser, or publish the repo with GitHub Pages (Settings → Pages → deploy from a branch).
 
 Tips:
-- To pick between cities with the same name, add the country or region: `Paris, Texas`, `Paris, TX`, `Paris, FR`, `London, UK`, `London, ON`, `Dubai, UAE`.
+- As you type, a list suggests matching places with their region, country and flag. Tap one (or use the arrow keys and Enter).
+- After a search, **Also called London:** buttons list other places with the same name. One tap switches.
+- The app remembers the exact place you last looked at (e.g. London, Ontario) and shows it again next time.
+- You can also type the country or region after a comma: `Paris, Texas`, `Paris, TX`, `Paris, FR`, `London, UK`, `London, ON`, `Dubai, UAE`.
 - The destination's time card says how far ahead or behind you it is.
-- The app remembers the last city you searched and shows it again next time.
 - Weather refreshes every 15 minutes while the page is open. Exchange rates are kept for an hour, since they change once a day.
 - Your location is rounded to about 1 km before it is sent to the weather and area-name services.
 - To add it to your iPhone home screen: open it in Safari, tap **Share → Add to Home Screen**.

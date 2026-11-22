@@ -35,7 +35,7 @@
           <span>
             <span class="stat-label">Temperature</span>
             <span class="stat-value"><span id="hereTempC">—</span>°C</span>
-            <span class="stat-sub"><span id="hereTempF">—</span> °F · <span id="hereCond"></span></span>
+            <span class="stat-sub"><span id="hereTempF">—</span> °F<span id="hereCond" class="cond-after"></span></span>
           </span>
         </div>
         <div class="stat">
@@ -46,11 +46,16 @@
       <button id="locate" class="locate" type="button" hidden>Use my location</button>
     </section>
 
-    <form id="search" class="search" autocomplete="off">
-      <label for="city" class="visually-hidden">City</label>
-      <input id="city" name="city" type="search" enterkeyhint="search" autocapitalize="words" spellcheck="false" placeholder="Type a city, e.g. Tokyo or Paris, Texas" required>
-      <button id="go" type="submit">Search</button>
-    </form>
+    <div class="search-wrap">
+      <form id="search" class="search" autocomplete="off">
+        <label for="city" class="visually-hidden">City</label>
+        <input id="city" name="city" type="search" enterkeyhint="search" autocapitalize="words" spellcheck="false"
+          placeholder="Type a city, e.g. Tokyo or London" required
+          role="combobox" aria-autocomplete="list" aria-controls="suggestions" aria-expanded="false">
+        <button id="go" type="submit">Search</button>
+      </form>
+      <ul id="suggestions" class="suggestions" role="listbox" aria-label="Matching places" hidden></ul>
+    </div>
 
     <p id="status" class="status" role="status" aria-live="polite"></p>
 
@@ -58,6 +63,10 @@
       <div class="place">
         <h2 id="cityName"></h2>
         <p id="country" class="country"></p>
+        <div id="also" class="also" hidden>
+          <span id="alsoLabel" class="also-label"></span>
+          <span id="alsoList" class="also-list"></span>
+        </div>
       </div>
 
       <div class="grid">

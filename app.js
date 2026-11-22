@@ -14,7 +14,11 @@ const TIMEOUT_MS = 10 * 1000;
 const RATES_TTL_MS = 60 * 60 * 1000;   // rates change once a day; keep them an hour
 const REFRESH_MS = 15 * 60 * 1000;     // refresh weather while the page is open
 const FALLBACK_CURRENCY = "CHF";
-const LAST_CITY_KEY = "cityPulse.lastCity";
+const LAST_PLACE_KEY = "cityPulse.lastPlace";  // the exact place last shown
+const OLD_LAST_CITY_KEY = "cityPulse.lastCity"; // older versions saved the typed text
+const SUGGEST_DELAY_MS = 250;                   // wait for a pause in typing
+const MAX_SUGGESTIONS = 6;
+const MAX_ALSO = 4;
 
 const $ = (id) => document.getElementById(id);
 
@@ -59,19 +63,58 @@ function matchesQualifier(place, q) {
     .some((field) => field && fold(field).startsWith(q));
 }
 
-// "City" or "City, Country/Region" -> the best matching place.
+// Places called `name`, biggest first. Shared by suggestions and searches; failures aren't kept.
+const placesCache = new Map();
+function searchPlaces(name) {
+  const key = fold(name);
+  if (!placesCache.has(key)) {
+    const url = `${API.search}?name=${encodeURIComponent(name)}&count=20&language=en&format=json`;
+    const promise = fetchJSON(url, "The city search service").then((data) => data.results || []);
+    promise.catch(() => placesCache.delete(key));
+    placesCache.set(key, promise);
+  }
+  return placesCache.get(key);
+}
+
+// "City" or "City, Country/Region" -> { name, qualifiers }
+function parseQuery(text) {
+  const [name = "", ...rest] = text.split(",").map((part) => part.trim());
+  return { name, qualifiers: rest.filter(Boolean) };
+}
+
+const matchesAll = (place, qualifiers) => qualifiers.every((q) => matchesQualifier(place, fold(q)));
+
+// The best matching place, plus all places found (for "Also called …").
 async function findCity(text) {
-  const [name, ...rest] = text.split(",").map((part) => part.trim());
-  const qualifiers = rest.filter(Boolean);
-  const qualifierText = qualifiers.join(", ");
+  const { name, qualifiers } = parseQuery(text);
   if (!name) throw new Error("Please type a city name.");
-  const url = `${API.search}?name=${encodeURIComponent(name)}&count=20&language=en&format=json`;
-  const places = (await fetchJSON(url, "The city search service")).results || [];
+  const places = await searchPlaces(name);
   if (!places.length) throw new Error(`No city called "${name}" was found.`);
-  if (!qualifierText) return places[0];
-  const match = places.find((p) => qualifiers.every((q) => matchesQualifier(p, fold(q))));
-  if (!match) throw new Error(`No "${name}" was found in "${qualifierText}". Try just "${name}", or a different country or region.`);
-  return match;
+  const place = places.find((p) => matchesAll(p, qualifiers));
+  if (!place) throw new Error(`No "${name}" was found in "${qualifiers.join(", ")}". Try just "${name}", or a different country or region.`);
+  return { place, places };
+}
+
+// "London, Ontario, Canada": also a search text that finds exactly this place again.
+function placeLabel(place) {
+  return [place.name, place.admin1 !== place.name && place.admin1, place.country].filter(Boolean).join(", ");
+}
+function placeWhere(place) {
+  return [place.admin1 !== place.name && place.admin1, place.country || place.country_code].filter(Boolean).join(", ");
+}
+const flag = (code) => /^[A-Za-z]{2}$/.test(code || "")
+  ? String.fromCodePoint(...code.toUpperCase().split("").map((c) => 0x1f1a5 + c.charCodeAt(0)))
+  : "📍";
+
+// Other places with exactly the same name, one per region, biggest first.
+function sameNamePlaces(place, places) {
+  const seen = new Set([placeWhere(place)]);
+  return places.filter((p) => {
+    const where = placeWhere(p);
+    if (p === place || fold(p.name) !== fold(place.name) || seen.has(where)) return false;
+    seen.add(where);
+    return true;
+  }).slice(0, MAX_ALSO);
 }
 
 async function getWeather(lat, lon) {
@@ -222,8 +265,22 @@ function showConversion(conv) {
   else $("conv").textContent = `${conv.to} rate unavailable right now`;
 }
 
-function showDestination({ place, timezone, currency }, weather, conv) {
+function showAlso(place, places) {
+  const others = sameNamePlaces(place, places);
+  $("also").hidden = !others.length;
+  $("alsoLabel").textContent = `Also called ${place.name}:`;
+  $("alsoList").replaceChildren(...others.map((p) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `${flag(p.country_code)} ${placeWhere(p)}`;
+    button.addEventListener("click", () => choose(p, places));
+    return button;
+  }));
+}
+
+function showDestination({ place, places, timezone, currency }, weather, conv) {
   $("cityName").textContent = place.name;
+  showAlso(place, places);
   const region = place.admin1 && place.admin1 !== place.name ? `${place.admin1}, ` : "";
   $("country").textContent = region + (place.country || place.country_code || "Unknown country");
 
@@ -247,13 +304,15 @@ function showDestination({ place, timezone, currency }, weather, conv) {
 
 // ---- Searching a city ---------------------------------------------------------
 
-async function search(text) {
+// Shows a place. `getPlace` resolves to { place, places } (places: everything found with that name).
+async function load(getPlace) {
   const id = ++state.searchId;
   const isCurrent = () => id === state.searchId;
+  closeSuggestions();
   $("go").disabled = true;
   setStatus("Searching…");
   try {
-    const place = await findCity(text);
+    const { place, places } = await getPlace();
     if (!isCurrent()) return;
     const currency = COUNTRY_CURRENCY[(place.country_code || "").toUpperCase()] || null;
     const [weather, conv] = await Promise.all([
@@ -262,10 +321,10 @@ async function search(text) {
     ]);
     if (!isCurrent()) return;
 
-    state.dest = { place, currency, timezone: weather?.timezone || place.timezone || null };
+    state.dest = { place, places, currency, timezone: weather?.timezone || place.timezone || null };
     showDestination(state.dest, weather, conv);
     if (conv && conv.to !== state.here.currency) refreshConversion(); // your currency changed meanwhile
-    try { localStorage.setItem(LAST_CITY_KEY, text); } catch { /* storage off */ }
+    try { localStorage.setItem(LAST_PLACE_KEY, JSON.stringify(place)); } catch { /* storage off */ }
 
     const missing = [!weather && "weather", conv && !conv.rate && "exchange rate"].filter(Boolean);
     setStatus(missing.length ? `Some data could not be loaded: ${missing.join(" and ")}.` : "", missing.length > 0);
@@ -274,6 +333,14 @@ async function search(text) {
   } finally {
     if (isCurrent()) $("go").disabled = false;
   }
+}
+
+const search = (text) => load(() => findCity(text));
+
+// A specific place picked from the suggestions or the "Also called" buttons.
+function choose(place, places) {
+  $("city").value = placeLabel(place);
+  return load(async () => ({ place, places }));
 }
 
 async function refreshConversion() {
@@ -288,6 +355,94 @@ $("search").addEventListener("submit", (event) => {
   const text = $("city").value.trim();
   if (text) search(text);
 });
+
+// ---- Suggestions while typing -------------------------------------------------
+
+const suggest = { id: 0, timer: null, places: [], all: [], active: -1 };
+
+function closeSuggestions() {
+  suggest.id++; // ignore answers still on their way
+  clearTimeout(suggest.timer);
+  suggest.places = [];
+  suggest.active = -1;
+  $("suggestions").hidden = true;
+  $("suggestions").replaceChildren();
+  $("city").setAttribute("aria-expanded", "false");
+  $("city").removeAttribute("aria-activedescendant");
+}
+
+async function updateSuggestions(text) {
+  const { name, qualifiers } = parseQuery(text);
+  if (name.length < 2) return closeSuggestions();
+  const id = ++suggest.id;
+  let found;
+  try { found = await searchPlaces(name); } catch { found = []; }
+  if (id !== suggest.id || document.activeElement !== $("city")) return;
+  const seen = new Set();
+  suggest.all = found;
+  suggest.places = found.filter((p) => {
+    const key = placeLabel(p);
+    if (seen.has(key) || !matchesAll(p, qualifiers)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, MAX_SUGGESTIONS);
+  suggest.active = -1;
+  if (!suggest.places.length) return closeSuggestions();
+
+  $("suggestions").replaceChildren(...suggest.places.map((p, i) => {
+    const li = document.createElement("li");
+    li.id = `suggestion-${i}`;
+    li.setAttribute("role", "option");
+    li.setAttribute("aria-selected", "false");
+    const icon = document.createElement("span");
+    icon.className = "flag";
+    icon.textContent = flag(p.country_code);
+    const textBox = document.createElement("span");
+    textBox.className = "sugg-text";
+    const title = document.createElement("span");
+    title.className = "sugg-name";
+    title.textContent = p.name;
+    const where = document.createElement("span");
+    where.className = "sugg-where";
+    where.textContent = placeWhere(p);
+    textBox.append(title, where);
+    li.append(icon, textBox);
+    li.addEventListener("mousedown", (e) => e.preventDefault()); // keep the keyboard open
+    li.addEventListener("click", () => choose(p, suggest.all));
+    return li;
+  }));
+  $("suggestions").hidden = false;
+  $("city").setAttribute("aria-expanded", "true");
+}
+
+function highlight(index) {
+  const items = $("suggestions").children;
+  suggest.active = (index + items.length) % items.length;
+  [...items].forEach((li, i) => li.setAttribute("aria-selected", String(i === suggest.active)));
+  items[suggest.active].scrollIntoView({ block: "nearest" });
+  $("city").setAttribute("aria-activedescendant", items[suggest.active].id);
+}
+
+$("city").addEventListener("input", () => {
+  clearTimeout(suggest.timer);
+  const text = $("city").value;
+  suggest.timer = setTimeout(() => updateSuggestions(text), SUGGEST_DELAY_MS);
+});
+
+$("city").addEventListener("keydown", (e) => {
+  if ($("suggestions").hidden) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    highlight(suggest.active + (e.key === "ArrowDown" ? 1 : -1));
+  } else if (e.key === "Enter" && suggest.active >= 0) {
+    e.preventDefault();
+    choose(suggest.places[suggest.active], suggest.all);
+  } else if (e.key === "Escape") {
+    closeSuggestions();
+  }
+});
+
+$("city").addEventListener("blur", closeSuggestions);
 
 // ---- Your location --------------------------------------------------------------
 
@@ -374,9 +529,16 @@ startClock("here", null, { weekday: "short", day: "numeric", month: "short" }); 
 showWeather("here", null);
 locate();
 
-let lastCity = "";
-try { lastCity = localStorage.getItem(LAST_CITY_KEY) || ""; } catch { /* storage off */ }
-if (lastCity) {
-  $("city").value = lastCity;
-  search(lastCity);
+// Show the last place again, with the other places of the same name.
+let lastPlace = null, oldLastCity = "";
+try {
+  lastPlace = JSON.parse(localStorage.getItem(LAST_PLACE_KEY) || "null");
+  oldLastCity = localStorage.getItem(OLD_LAST_CITY_KEY) || "";
+} catch { /* storage off or unreadable */ }
+if (lastPlace && lastPlace.name && isNum(lastPlace.latitude)) {
+  $("city").value = placeLabel(lastPlace);
+  load(async () => ({ place: lastPlace, places: await searchPlaces(lastPlace.name).catch(() => []) }));
+} else if (oldLastCity) {
+  $("city").value = oldLastCity;
+  search(oldLastCity);
 }

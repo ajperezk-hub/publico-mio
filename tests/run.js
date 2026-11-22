@@ -14,7 +14,9 @@ const PLACES = {
   Tokyo: [place("Tokyo", "JP", "Japan", "Tokyo", 35.68, "Asia/Tokyo")],
   Zurich: [place("Zurich", "CH", "Switzerland", "Zurich", 47.37, "Europe/Zurich")],
   London: [place("London", "GB", "United Kingdom", "England", 51.51, "Europe/London"),
-           place("London", "CA", "Canada", "Ontario", 42.98, "America/Toronto")],
+           place("London", "CA", "Canada", "Ontario", 42.98, "America/Toronto"),
+           place("London", "US", "United States", "Kentucky", 37.13, "America/New_York"),
+           place("Londonderry", "GB", "United Kingdom", "Northern Ireland", 55.0, "Europe/London")],
   Paris: [place("Paris", "FR", "France", "Île-de-France", 48.85, "Europe/Paris"),
           place("Paris", "US", "United States", "Texas", 33.66, "America/Chicago")],
   Portland: [place("Portland", "US", "United States", "Oregon", 45.52, "America/Los_Angeles"),
@@ -29,6 +31,7 @@ const PLACES = {
 const WEATHER = {
   "35.68": [20, 61, 1, "Asia/Tokyo"], "47.37": [4.5, 3, 1, "Europe/Zurich"], "47.38": [4.5, 3, 1, "Europe/Zurich"],
   "51.51": [9, 45, 1, "Europe/London"], "48.85": [2, 0, 0, "Europe/Paris"], "59.91": [-0.04, 71, 1, "Europe/Oslo"],
+  "42.98": [3, 3, 1, "America/Toronto"], "37.13": [8, 2, 1, "America/New_York"],
   "42.36": [12, 95, 1, "America/New_York"], "40.71": [12, 2, 1, "America/New_York"]
 };
 const USD_RATES = { USD: 1, JPY: 150, CHF: 0.8, EUR: 0.9, GBP: 0.75, VND: 25000, AED: 3.67, CAD: 1.36, NOK: 10.5 };
@@ -47,11 +50,14 @@ async function open(browser, { location = null, homeCountry = null, locale = "de
     ...(location ? { geolocation: location, permissions: ["geolocation"] } : {})
   });
   const page = await context.newPage();
-  const calls = { rates: 0, weather: [], place: [] };
+  const calls = { rates: 0, weather: [], place: [], searches: [] };
   await page.route("**/geocoding-api.open-meteo.com/**", (r) => {
     if (api.offline) return r.abort();
-    const name = new URL(r.request().url()).searchParams.get("name");
-    r.fulfill({ json: { results: PLACES[name] } });
+    // Like the real service: places whose name starts with what was typed, biggest first.
+    const name = new URL(r.request().url()).searchParams.get("name").toLowerCase();
+    calls.searches.push(name);
+    const results = Object.keys(PLACES).filter((k) => k.toLowerCase().startsWith(name)).flatMap((k) => PLACES[k]);
+    r.fulfill({ json: results.length ? { results } : {} });
   });
   await page.route("**/api.open-meteo.com/**", async (r) => {
     const lat = new URL(r.request().url()).searchParams.get("latitude");
@@ -137,11 +143,82 @@ async function open(browser, { location = null, homeCountry = null, locale = "de
     await search("Atlantis");
     check("unknown city", await text("status"), 'No city called "Atlantis"');
 
-    // Remembers the last successful city
-    await search("Dubai");
+    // "Also called London" buttons
+    await search("London");
+    check("biggest London first", await text("country"), "England, United Kingdom");
+    check("also label", await text("alsoLabel"), "Also called London:");
+    const also = await page.$$eval("#alsoList button", (bs) => bs.map((b) => b.textContent));
+    check("also lists Ontario", also.join(" | "), "Ontario, Canada");
+    check("also lists Kentucky", also.join(" | "), "Kentucky, United States");
+    check("also skips Londonderry", also.join(" | ").includes("Northern Ireland"), false);
+    check("also has flags", also[0], "🇨🇦");
+    await page.click("#alsoList button >> text=Ontario");
+    await page.waitForFunction(() => document.getElementById("country").textContent.includes("Ontario"));
+    check("also button switches city", await text("country"), "Ontario, Canada");
+    check("also now offers the UK one", await page.$eval("#alsoList", (e) => e.textContent), "England, United Kingdom");
+    check("search box shows exact place", await page.inputValue("#city"), "London, Ontario, Canada");
+    check("time zone follows", await text("tz"), "America/Toronto");
+    await search("Tokyo");
+    check("no also row for unique names", await page.$eval("#also", (e) => e.hidden), true);
+
+    // Suggestions while typing
+    await page.fill("#city", "");
+    await page.type("#city", "Lon");
+    await page.waitForSelector("#suggestions:not([hidden]) li");
+    const sugg = await page.$$eval("#suggestions li", (lis) => lis.map((li) => li.textContent));
+    check("suggestions show 4 places", sugg.length, 4);
+    check("suggestion 1", sugg[0], "England, United Kingdom");
+    check("suggestion 2", sugg[1], "Ontario, Canada");
+    check("suggestion shows other names too", sugg.join(" | "), "Londonderry");
+    check("combobox expanded", await page.getAttribute("#city", "aria-expanded"), "true");
+    if (SHOTS) {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.screenshot({ path: `${SHOTS}/suggestions.png` });
+      await page.setViewportSize({ width: 1280, height: 720 });
+    }
+    await page.click("#suggestions li >> text=Kentucky");
+    await page.waitForFunction(() => document.getElementById("country").textContent.includes("Kentucky"));
+    check("tap a suggestion", await text("country"), "Kentucky, United States");
+    check("list closes after choosing", await page.$eval("#suggestions", (e) => e.hidden), true);
+
+    // Keyboard: arrows + Enter, Escape
+    await page.fill("#city", "");
+    await page.type("#city", "Lond");
+    await page.waitForSelector("#suggestions:not([hidden]) li");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    check("arrow highlights", await page.getAttribute("#suggestion-1", "aria-selected"), "true");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.getElementById("country").textContent.includes("Ontario"));
+    check("Enter picks highlighted", await text("country"), "Ontario, Canada");
+    await page.fill("#city", "");
+    await page.type("#city", "Lon");
+    await page.waitForSelector("#suggestions:not([hidden]) li");
+    await page.keyboard.press("Escape");
+    check("Escape closes list", await page.$eval("#suggestions", (e) => e.hidden), true);
+
+    // Typing a qualifier narrows suggestions
+    await page.fill("#city", "");
+    await page.type("#city", "London, Can");
+    await page.waitForSelector("#suggestions:not([hidden]) li");
+    const narrowed = await page.$$eval("#suggestions li", (lis) => lis.map((li) => li.textContent));
+    check("qualifier narrows suggestions", narrowed.length === 1 && narrowed[0].includes("Ontario"), true);
+    await page.keyboard.press("Escape");
+
+    // One letter: no suggestions, no request
+    const searchesBefore = calls.searches.length;
+    await page.fill("#city", "");
+    await page.type("#city", "L");
+    await page.waitForTimeout(500);
+    check("no suggestions for one letter", await page.$eval("#suggestions", (e) => e.hidden), true);
+    check("no request for one letter", calls.searches.length === searchesBefore, true);
+
+    // Remembers the exact place, not just the name
+    await search("London, Kentucky");
     await page.reload();
-    await page.waitForFunction(() => document.getElementById("cityName").textContent === "Dubai", null, { timeout: 10000 });
-    check("remembers last city", await text("cityName"), "Dubai");
+    await page.waitForFunction(() => document.getElementById("country").textContent.includes("Kentucky"), null, { timeout: 10000 });
+    check("remembers exact place", await text("country"), "Kentucky, United States");
+    check("restored place offers others", await page.$eval("#alsoList", (e) => e.textContent), "England, United Kingdom");
 
     await page.setViewportSize({ width: 390, height: 844 });
     check("no sideways scrolling on phones", await page.evaluate(() => document.documentElement.scrollWidth <= 390), true);

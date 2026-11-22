@@ -109,6 +109,42 @@ h1 {
 .search button:hover { filter: brightness(1.08); }
 .search button:disabled { opacity: 0.6; cursor: wait; }
 
+.search-wrap { position: relative; z-index: 2; }
+
+.suggestions {
+  position: absolute;
+  left: 0; right: 0; top: calc(100% + 6px);
+  margin: 0; padding: 6px;
+  list-style: none;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  max-height: min(60vh, 360px);
+  overflow-y: auto;
+}
+.suggestions li {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  min-width: 0;
+}
+.suggestions li[aria-selected="true"], .suggestions li:hover { background: var(--chrome); }
+.flag { flex: none; font-size: 1.3rem; line-height: 1; width: 1.6rem; text-align: center; }
+.sugg-text { display: flex; flex-direction: column; min-width: 0; }
+.sugg-name { font-weight: 700; }
+.sugg-where { font-size: 0.85rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.also { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 10px; }
+.also-label { font-size: 0.85rem; color: var(--muted); }
+.also-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.also-list button {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 0.85rem; cursor: pointer;
+}
+.also-list button:hover { border-color: var(--blue-text); }
+
 .status { min-height: 1.4em; margin: 12px 4px; color: var(--muted); }
 .status.error { color: var(--red-text); font-weight: 600; }
 
@@ -205,6 +241,7 @@ h1 {
 .stat-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.8; }
 .stat-value { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .stat-sub { font-size: 0.85rem; opacity: 0.9; }
+.cond-after:not(:empty)::before { content: " · "; }
 .here-icon { flex: none; width: 48px; height: 48px; border-radius: 12px; background: rgba(255,255,255,0.92); display: grid; place-items: center; }
 .here-icon:empty { display: none; }
 .here-icon svg { width: 40px; height: 40px; }
