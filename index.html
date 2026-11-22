@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>City Pulse</title>
+  <meta name="description" content="Local time, weather and currency (with Swiss franc conversion) for any city.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div class="crest" aria-hidden="true"></div>
+      <h1>City Pulse</h1>
+      <p class="tagline">Time, weather and money for any city in the world</p>
+    </header>
+
+    <form id="search" class="search" autocomplete="off">
+      <label for="city" class="visually-hidden">City</label>
+      <input id="city" name="city" type="text" placeholder="Type a city, e.g. Tokyo or Paris, Texas" required>
+      <button id="go" type="submit">Search</button>
+    </form>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+
+    <section id="result" class="result" hidden>
+      <div class="place">
+        <h2 id="cityName"></h2>
+        <p id="country" class="country"></p>
+      </div>
+
+      <div class="grid">
+        <article class="card card-time">
+          <h3>Local time</h3>
+          <p id="time" class="big"></p>
+          <p id="date" class="sub"></p>
+          <p id="tz" class="sub muted"></p>
+        </article>
+
+        <article class="card card-temp">
+          <h3>Temperature</h3>
+          <p class="big"><span id="tempC"></span><span class="unit">°C</span></p>
+          <p class="sub"><span id="tempF"></span> °F</p>
+        </article>
+
+        <article class="card card-hum">
+          <h3>Humidity</h3>
+          <p class="big"><span id="humidity"></span><span class="unit">%</span></p>
+          <div class="meter" aria-hidden="true"><div id="humBar" class="meter-fill"></div></div>
+        </article>
+
+        <article class="card card-money">
+          <h3>Currency</h3>
+          <p id="currency" class="big"></p>
+          <p id="currencyName" class="sub"></p>
+          <p id="chf" class="chf"></p>
+        </article>
+      </div>
+    </section>
+
+    <footer class="foot">
+      Weather &amp; places: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> ·
+      Exchange rates: <a href="https://www.exchangerate-api.com/" target="_blank" rel="noopener">ExchangeRate-API</a>
+    </footer>
+  </main>
+
+  <script src="currencies.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

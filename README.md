@@ -1,2 +1,33 @@
-# publico-mio
-Todo
+# City Pulse
+
+A simple, warm web app: type a city and see
+
+- **City and country** (plus state/region when there is one)
+- **Local time**: a live clock with the date and time zone
+- **Temperature** in °C and °F
+- **Humidity** with a fill bar
+- **Currency** with its name, always converted to **Swiss francs (CHF)** in both directions
+
+The colours follow an Optimus Prime palette: Autobot red, deep blue, chrome silver and headlight yellow, on a warm cream background (it also has a dark mode).
+
+## Use it
+
+No installation and no API keys. Open `index.html` in a browser, or publish the repo with GitHub Pages (Settings → Pages → deploy from a branch).
+
+Tips:
+- To pick between cities with the same name, add the country or region: `Paris, Texas`, `Paris, FR`, `London, Canada`.
+- If one data source is down, the app still shows what it has and says what is missing.
+
+## Files
+
+| File | What it does |
+| --- | --- |
+| `index.html` | Page layout |
+| `style.css` | Look and feel |
+| `app.js` | Search, weather, clock and currency logic |
+| `currencies.js` | Country → currency table (reviewed Nov 2026) |
+
+## Data sources
+
+- [Open-Meteo](https://open-meteo.com/): city search and current weather
+- [ExchangeRate-API (open access)](https://www.exchangerate-api.com/docs/free): exchange rates, updated daily
