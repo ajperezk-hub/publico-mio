@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>City Pulse</title>
   <meta name="description" content="Local time, weather and currency (with Swiss franc conversion) for any city.">
+  <meta name="theme-color" content="#c4161c">
+  <meta name="apple-mobile-web-app-title" content="City Pulse">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -44,7 +48,7 @@
 
     <form id="search" class="search" autocomplete="off">
       <label for="city" class="visually-hidden">City</label>
-      <input id="city" name="city" type="text" placeholder="Type a city, e.g. Tokyo or Paris, Texas" required>
+      <input id="city" name="city" type="search" enterkeyhint="search" autocapitalize="words" spellcheck="false" placeholder="Type a city, e.g. Tokyo or Paris, Texas" required>
       <button id="go" type="submit">Search</button>
     </form>
 
@@ -62,6 +66,7 @@
           <p id="time" class="big"></p>
           <p id="date" class="sub"></p>
           <p id="tz" class="sub muted"></p>
+          <p id="tzDiff" class="sub diff"></p>
         </article>
 
         <article class="card card-temp">

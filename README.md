@@ -19,7 +19,12 @@ The colours follow an Optimus Prime palette: Autobot red, deep blue, chrome silv
 No installation and no API keys. Open `index.html` in a browser, or publish the repo with GitHub Pages (Settings → Pages → deploy from a branch).
 
 Tips:
-- To pick between cities with the same name, add the country or region: `Paris, Texas`, `Paris, FR`, `London, Canada`.
+- To pick between cities with the same name, add the country or region: `Paris, Texas`, `Paris, TX`, `Paris, FR`, `London, UK`, `London, ON`, `Dubai, UAE`.
+- The destination's time card says how far ahead or behind you it is.
+- The app remembers the last city you searched and shows it again next time.
+- Weather refreshes every 15 minutes while the page is open. Exchange rates are kept for an hour, since they change once a day.
+- Your location is rounded to about 1 km before it is sent to the weather and area-name services.
+- To add it to your iPhone home screen: open it in Safari, tap **Share → Add to Home Screen**.
 - If one data source is down, the app still shows what it has and says what is missing.
 
 ## Files
@@ -29,6 +34,7 @@ Tips:
 | `index.html` | Page layout |
 | `style.css` | Look and feel |
 | `app.js` | Search, weather, clock and currency logic |
+| `icon.svg`, `apple-touch-icon.png` | App icon for the browser tab and home screen |
 | `icons.js` | Weather pictures for each weather type |
 | `currencies.js` | Country → currency table (reviewed Nov 2026) |
 
